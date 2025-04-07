@@ -1,16 +1,15 @@
-import type { AxiosInstance, AxiosRequestConfig, AxiosError } from 'axios';
-import axios from 'axios';
-import type { LimitlessConfig } from './types';
-import { Tournaments } from './resources/tournaments';
+import type { APIResponse, LimitlessConfig, RequestOptions } from './types';
 import { Players } from './resources/players';
+import { Tournaments } from './resources/tournaments';
 import { Decklists } from './resources/decklists';
 import { Matches } from './resources/matches';
-import { LimitlessAPIError, LimitlessAuthenticationError, LimitlessNetworkError } from './errors';
+import { LimitlessAPIError } from './errors';
 
 export class LimitlessClient {
-  private readonly axios: AxiosInstance;
-  private static DEFAULT_BASE_URL = 'https://api.limitlesstcg.com/v1';
-  private static DEFAULT_TIMEOUT = 10000;
+  private baseURL: string;
+  private timeout: number;
+  private apiKey?: string;
+  private version: string;
 
   public readonly tournaments: Tournaments;
   public readonly players: Players;
@@ -18,69 +17,93 @@ export class LimitlessClient {
   public readonly matches: Matches;
 
   constructor(config: LimitlessConfig = {}) {
-    const axiosConfig: AxiosRequestConfig = {
-      baseURL: config.baseURL || LimitlessClient.DEFAULT_BASE_URL,
-      timeout: config.timeout || LimitlessClient.DEFAULT_TIMEOUT,
-      headers: {
-        'Content-Type': 'application/json',
-      },
+    this.baseURL = config.baseURL || 'https://play.limitlesstcg.com/api';
+    this.timeout = config.timeout || 30000;
+    this.apiKey = config.apiKey;
+    this.version = config.version || 'v1';
+
+    // Initialize resources with the request method
+    this.tournaments = new Tournaments(this.request.bind(this));
+    this.players = new Players(this.request.bind(this));
+    this.decklists = new Decklists(this.request.bind(this));
+    this.matches = new Matches(this.request.bind(this));
+  }
+
+  private buildURL(path: string): string {
+    const cleanPath = path.startsWith('/') ? path.slice(1) : path;
+    return `${this.baseURL}/${cleanPath}`;
+  }
+
+  private buildHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
     };
 
-    if (config.apiKey) {
-      axiosConfig.headers = {
-        ...axiosConfig.headers,
-        Authorization: `Bearer ${config.apiKey}`,
-      };
+    if (this.apiKey) {
+      headers.Authorization = `Bearer ${this.apiKey}`;
     }
 
-    if (config.version) {
-      axiosConfig.headers = {
-        ...axiosConfig.headers,
-        'Limitless-Version': config.version,
-      };
+    return headers;
+  }
+
+  private buildQueryString(params?: Record<string, string | number>): string {
+    if (!params) return '';
+    const query = Object.entries(params)
+      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+      .join('&');
+    return query ? `?${query}` : '';
+  }
+
+  public async request<T>(path: string, options: RequestOptions = {}): Promise<APIResponse<T>> {
+    const url = this.buildURL(path) + this.buildQueryString(options.params);
+    const headers = { ...this.buildHeaders(), ...options.headers };
+    const requestOptions: RequestInit = {
+      headers,
+    };
+
+    if (options.method) {
+      requestOptions.method = options.method;
     }
 
-    this.axios = axios.create(axiosConfig);
+    if (options.body) {
+      requestOptions.body = JSON.stringify(options.body);
+    }
 
-    // Initialize resources
-    this.tournaments = new Tournaments(this.axios);
-    this.players = new Players(this.axios);
-    this.decklists = new Decklists(this.axios);
-    this.matches = new Matches(this.axios);
+    try {
+      const response = await fetch(url, requestOptions);
+      const data = await response.json();
 
-    // Add response interceptor for error handling
-    this.axios.interceptors.response.use(
-      (response) => response,
-      (error: AxiosError) => {
-        if (error.response) {
-          const { data, status } = error.response;
-          
-          if (status === 401) {
-            throw new LimitlessAuthenticationError('Invalid API key or insufficient permissions');
-          }
-
-          throw new LimitlessAPIError(
-            (data as any)?.message || 'An unknown error occurred',
-            status,
-            error
-          );
-        }
-        throw new LimitlessNetworkError(error.message || 'Network error occurred', error);
+      if (!response.ok) {
+        throw new LimitlessAPIError(
+          `Request failed with status ${response.status}: ${data.message || 'An unknown error occurred'}`,
+          response.status,
+          data
+        );
       }
-    );
+
+      return data;
+    } catch (error) {
+      if (error instanceof LimitlessAPIError) {
+        throw error;
+      }
+      if (error instanceof Error) {
+        throw new LimitlessAPIError('Network error', 500, { message: error.message });
+      }
+      throw new LimitlessAPIError('Network error', 500, { message: 'Network error' });
+    }
   }
 
   /**
    * Set a new API key for the client
    */
   public setApiKey(apiKey: string): void {
-    this.axios.defaults.headers.common.Authorization = `Bearer ${apiKey}`;
+    this.apiKey = apiKey;
   }
 
   /**
    * Set a specific API version
    */
   public setApiVersion(version: string): void {
-    this.axios.defaults.headers.common['Limitless-Version'] = version;
+    this.version = version;
   }
 } 

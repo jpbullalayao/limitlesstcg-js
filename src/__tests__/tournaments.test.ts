@@ -1,67 +1,57 @@
-import axios from 'axios';
 import { Tournaments } from '../resources/tournaments';
 import { TournamentStatus, TournamentType } from '../types';
 
-jest.mock('axios');
-const mockedAxios = axios as jest.Mocked<typeof axios>;
-
 describe('Tournaments', () => {
   let tournaments: Tournaments;
-  const mockAxiosInstance = {
-    get: jest.fn(),
-    post: jest.fn(),
-    patch: jest.fn(),
-    delete: jest.fn(),
-  };
+  const mockRequest = jest.fn();
 
   beforeEach(() => {
     jest.clearAllMocks();
-    tournaments = new Tournaments(mockAxiosInstance as any);
+    tournaments = new Tournaments(mockRequest);
   });
 
   describe('list', () => {
     const mockResponse = {
-      data: {
-        data: [
-          {
-            id: 'tournament_1',
-            name: 'Test Tournament 1',
-            startDate: '2024-01-01',
-            endDate: '2024-01-02',
-            format: 'SV',
-            status: TournamentStatus.ONGOING,
-            playerCount: 64,
-            roundCount: 6,
-            type: TournamentType.SWISS,
-          },
-        ],
-        meta: {
-          total: 1,
-          page: 1,
-          pageSize: 20,
+      data: [
+        {
+          id: 'tournament_1',
+          name: 'Test Tournament 1',
+          startDate: '2024-01-01',
+          endDate: '2024-01-02',
+          format: 'SV',
+          status: TournamentStatus.ONGOING,
+          playerCount: 64,
+          roundCount: 6,
+          type: TournamentType.SWISS,
         },
+      ],
+      meta: {
+        total: 1,
+        page: 1,
+        pageSize: 20,
+        hasMore: false,
       },
     };
 
     it('should return paginated tournaments', async () => {
-      mockAxiosInstance.get.mockResolvedValueOnce(mockResponse);
+      mockRequest.mockResolvedValueOnce(mockResponse);
 
       const { data, meta } = await tournaments.list().firstPage();
 
-      expect(mockAxiosInstance.get).toHaveBeenCalledWith('/tournaments', {
+      expect(mockRequest).toHaveBeenCalledWith('/tournaments', {
         params: { page: 1, pageSize: 20 },
       });
-      expect(data).toEqual(mockResponse.data.data);
+      expect(data).toEqual(mockResponse.data);
       expect(meta.total).toBe(1);
       expect(meta.hasMore).toBe(false);
     });
 
     it('should handle filtering parameters', async () => {
-      mockAxiosInstance.get.mockResolvedValueOnce(mockResponse);
+      mockRequest.mockResolvedValueOnce(mockResponse);
 
       await tournaments.list({ format: 'SV', status: 'ongoing' }).firstPage();
 
-      expect(mockAxiosInstance.get).toHaveBeenCalledWith('/tournaments', {
+      expect(mockRequest).toHaveBeenCalledWith('/tournaments', {
         params: { format: 'SV', status: 'ongoing', page: 1, pageSize: 20 },
       });
     });
@@ -69,24 +59,26 @@ describe('Tournaments', () => {
 
   describe('retrieve', () => {
     const mockTournament = {
-      id: 'tournament_1',
-      name: 'Test Tournament 1',
-      startDate: '2024-01-01',
-      endDate: '2024-01-02',
-      format: 'SV',
-      status: TournamentStatus.ONGOING,
-      playerCount: 64,
-      roundCount: 6,
-      type: TournamentType.SWISS,
+      data: {
+        id: 'tournament_1',
+        name: 'Test Tournament 1',
+        startDate: '2024-01-01',
+        endDate: '2024-01-02',
+        format: 'SV',
+        status: TournamentStatus.ONGOING,
+        playerCount: 64,
+        roundCount: 6,
+        type: TournamentType.SWISS,
+      },
     };
 
     it('should retrieve a tournament by ID', async () => {
-      mockAxiosInstance.get.mockResolvedValueOnce({ data: mockTournament });
+      mockRequest.mockResolvedValueOnce(mockTournament);
 
       const tournament = await tournaments.retrieve('tournament_1');
 
-      expect(mockAxiosInstance.get).toHaveBeenCalledWith('/tournaments/tournament_1');
-      expect(tournament).toEqual(mockTournament);
+      expect(mockRequest).toHaveBeenCalledWith('/tournaments/tournament_1');
+      expect(tournament).toEqual(mockTournament.data);
     });
   });
 
@@ -99,14 +91,23 @@ describe('Tournaments', () => {
       type: 'swiss',
     };
 
+    const mockTournament = {
+      data: {
+        ...createParams,
+        id: 'new_tournament',
+      },
+    };
+
     it('should create a new tournament', async () => {
-      const mockTournament = { ...createParams, id: 'new_tournament' };
-      mockAxiosInstance.post.mockResolvedValueOnce({ data: mockTournament });
+      mockRequest.mockResolvedValueOnce(mockTournament);
 
       const tournament = await tournaments.create(createParams);
 
-      expect(mockAxiosInstance.post).toHaveBeenCalledWith('/tournaments', createParams);
-      expect(tournament).toEqual(mockTournament);
+      expect(mockRequest).toHaveBeenCalledWith('/tournaments', {
+        method: 'POST',
+        body: createParams,
+      });
+      expect(tournament).toEqual(mockTournament.data);
     });
   });
 
@@ -115,24 +116,35 @@ describe('Tournaments', () => {
       name: 'Updated Tournament',
     };
 
+    const mockTournament = {
+      data: {
+        id: 'tournament_1',
+        ...updateParams,
+      },
+    };
+
     it('should update an existing tournament', async () => {
-      const mockTournament = { id: 'tournament_1', ...updateParams };
-      mockAxiosInstance.patch.mockResolvedValueOnce({ data: mockTournament });
+      mockRequest.mockResolvedValueOnce(mockTournament);
 
       const tournament = await tournaments.update('tournament_1', updateParams);
 
-      expect(mockAxiosInstance.patch).toHaveBeenCalledWith('/tournaments/tournament_1', updateParams);
-      expect(tournament).toEqual(mockTournament);
+      expect(mockRequest).toHaveBeenCalledWith('/tournaments/tournament_1', {
+        method: 'PATCH',
+        body: updateParams,
+      });
+      expect(tournament).toEqual(mockTournament.data);
     });
   });
 
   describe('delete', () => {
     it('should delete a tournament', async () => {
-      mockAxiosInstance.delete.mockResolvedValueOnce({});
+      mockRequest.mockResolvedValueOnce(undefined);
 
       await tournaments.delete('tournament_1');
 
-      expect(mockAxiosInstance.delete).toHaveBeenCalledWith('/tournaments/tournament_1');
+      expect(mockRequest).toHaveBeenCalledWith('/tournaments/tournament_1', {
+        method: 'DELETE',
+      });
     });
   });
 
@@ -149,15 +161,25 @@ describe('Tournaments', () => {
           draws: 0,
         },
       ],
+      meta: {
+        total: 1,
+        page: 1,
+        pageSize: 20,
+        hasMore: false,
+      },
     };
 
     it('should get tournament standings', async () => {
-      mockAxiosInstance.get.mockResolvedValueOnce({ data: mockStandings });
+      mockRequest.mockResolvedValueOnce(mockStandings);
 
-      const standings = await tournaments.getStandings('tournament_1');
+      const { data, meta } = await tournaments.getStandings('tournament_1').firstPage();
 
-      expect(mockAxiosInstance.get).toHaveBeenCalledWith('/tournaments/tournament_1/standings');
-      expect(standings).toEqual(mockStandings);
+      expect(mockRequest).toHaveBeenCalledWith('/tournaments/tournament_1/standings', {
+        params: { page: 1, pageSize: 20 },
+      });
+      expect(data).toEqual(mockStandings.data);
+      expect(meta.total).toBe(1);
+      expect(meta.hasMore).toBe(false);
     });
   });
 }); 

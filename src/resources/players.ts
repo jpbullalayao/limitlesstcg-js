@@ -1,84 +1,55 @@
-import type { AxiosInstance } from 'axios';
-import type { Player, APIResponse } from '../types';
+import type { APIResponse, Player, PlayerListParams, PlayerStats, PlayerTournament, PlayerMatch } from '../types';
+import { PaginatedResponse } from '../utils/pagination';
 
-export interface PlayerListParams {
-  page?: number;
-  pageSize?: number;
-  country?: string;
-  search?: string;
-}
-
-export interface PlayerStats {
-  totalTournaments: number;
-  totalMatches: number;
-  wins: number;
-  losses: number;
-  draws: number;
-  winRate: number;
-}
+type PlayerResponse<T> = APIResponse<T>;
 
 export class Players {
-  private readonly axios: AxiosInstance;
-  private readonly basePath = '/players';
+  constructor(private request: (path: string, options?: Record<string, unknown>) => Promise<PlayerResponse<Player | Player[] | PlayerStats | PlayerTournament[] | PlayerMatch[]>>) {}
 
-  constructor(axios: AxiosInstance) {
-    this.axios = axios;
+  list(params: PlayerListParams = {}): PaginatedResponse<Player> {
+    const wrappedRequest = async (path: string, options?: Record<string, unknown>): Promise<APIResponse<Player[]>> => {
+      const response = await this.request(path, options);
+      return response as APIResponse<Player[]>;
+    };
+
+    const paginator = new PaginatedResponse<Player>(wrappedRequest, 20, '/players');
+    paginator.setParams(params);
+    return paginator;
   }
 
-  /**
-   * List players with optional filtering
-   */
-  async list(params: PlayerListParams = {}): Promise<APIResponse<Player[]>> {
-    const response = await this.axios.get(this.basePath, { params });
-    return response.data;
-  }
-
-  /**
-   * Retrieve a single player by ID
-   */
   async retrieve(id: string): Promise<Player> {
-    const response = await this.axios.get(`${this.basePath}/${id}`);
-    return response.data;
+    const response = await this.request(`/players/${id}`);
+    return response.data as Player;
   }
 
-  /**
-   * Get player statistics
-   */
   async getStats(id: string): Promise<PlayerStats> {
-    const response = await this.axios.get(`${this.basePath}/${id}/stats`);
-    return response.data;
+    const response = await this.request(`/players/${id}/stats`);
+    return response.data as PlayerStats;
   }
 
-  /**
-   * Get a player's tournament history
-   */
-  async getTournaments(id: string, params: { page?: number; pageSize?: number } = {}): Promise<APIResponse<Array<{
-    tournamentId: string;
-    tournamentName: string;
-    placement: number;
-    points: number;
-    wins: number;
-    losses: number;
-    draws: number;
-  }>>> {
-    const response = await this.axios.get(`${this.basePath}/${id}/tournaments`, { params });
-    return response.data;
+  getTournaments(id: string): PaginatedResponse<PlayerTournament> {
+    const wrappedRequest = async (path: string, options?: Record<string, unknown>): Promise<APIResponse<PlayerTournament[]>> => {
+      const response = await this.request(path, options);
+      return response as APIResponse<PlayerTournament[]>;
+    };
+
+    return new PaginatedResponse<PlayerTournament>(
+      wrappedRequest,
+      20,
+      `/players/${id}/tournaments`
+    );
   }
 
-  /**
-   * Get a player's match history
-   */
-  async getMatches(id: string, params: { page?: number; pageSize?: number } = {}): Promise<APIResponse<Array<{
-    matchId: string;
-    tournamentId: string;
-    tournamentName: string;
-    round: number;
-    opponentId: string;
-    opponentName: string;
-    result: 'win' | 'loss' | 'draw';
-    score: string;
-  }>>> {
-    const response = await this.axios.get(`${this.basePath}/${id}/matches`, { params });
-    return response.data;
+  getMatches(id: string): PaginatedResponse<PlayerMatch> {
+    const wrappedRequest = async (path: string, options?: Record<string, unknown>): Promise<APIResponse<PlayerMatch[]>> => {
+      const response = await this.request(path, options);
+      return response as APIResponse<PlayerMatch[]>;
+    };
+
+    return new PaginatedResponse<PlayerMatch>(
+      wrappedRequest,
+      20,
+      `/players/${id}/matches`
+    );
   }
 } 

@@ -1,101 +1,84 @@
 import type { APIResponse } from '../types';
 
-export interface PaginationParams {
-  page?: number;
-  pageSize?: number;
-}
-
-export interface PaginationMeta {
-  total: number;
-  page: number;
-  pageSize: number;
-  hasMore: boolean;
-}
-
 export class PaginatedResponse<T> implements AsyncIterator<T[]>, AsyncIterable<T[]> {
-  private currentPage: number;
-  private readonly pageSize: number;
-  private readonly fetchFunction: (params: PaginationParams) => Promise<APIResponse<T[]>>;
-  private hasMore: boolean = true;
+  private currentPage = 1;
+  private hasMore = true;
+  private total = 0;
+  private initialResponse: APIResponse<T[]> | null = null;
+  private params: Record<string, string | number> = {};
 
   constructor(
-    fetchFunction: (params: PaginationParams) => Promise<APIResponse<T[]>>,
-    pageSize: number = 20
-  ) {
-    this.fetchFunction = fetchFunction;
+    private request: (path: string, options?: Record<string, unknown>) => Promise<APIResponse<T[]>>,
+    private pageSize = 20,
+    private path = ''
+  ) {}
+
+  setParams(params: Record<string, string | number | undefined>): void {
+    this.params = Object.entries(params).reduce((acc, [key, value]) => {
+      if (value !== undefined) {
+        acc[key] = value;
+      }
+      return acc;
+    }, {} as Record<string, string | number>);
+  }
+
+  async firstPage(): Promise<APIResponse<T[]>> {
+    const response = await this.request(this.path, {
+      params: { ...this.params, page: 1, pageSize: this.pageSize },
+    });
+
+    this.initialResponse = response;
     this.currentPage = 1;
-    this.pageSize = pageSize;
+    this.total = response.meta?.total ?? 0;
+    this.hasMore = response.meta?.hasMore ?? false;
+
+    return response;
   }
 
-  public [Symbol.asyncIterator](): AsyncIterator<T[]> {
-    return this;
-  }
+  async next(): Promise<IteratorResult<T[]>> {
+    if (!this.initialResponse) {
+      const response = await this.firstPage();
+      return { value: response.data, done: false };
+    }
 
-  public async next(): Promise<IteratorResult<T[]>> {
     if (!this.hasMore) {
-      return { done: true, value: [] };
+      return { value: [], done: true };
     }
 
-    const response = await this.fetchFunction({
-      page: this.currentPage,
-      pageSize: this.pageSize,
-    });
-
-    const meta = response.meta || {};
-    const total = meta.total || 0;
-    this.hasMore = (this.currentPage * this.pageSize) < total;
     this.currentPage++;
-
-    return {
-      done: false,
-      value: response.data,
-    };
-  }
-
-  /**
-   * Get all items by automatically fetching all pages
-   */
-  public async all(): Promise<T[]> {
-    const allItems: T[] = [];
-    for await (const items of this) {
-      allItems.push(...items);
-    }
-    return allItems;
-  }
-
-  /**
-   * Get items from the first page only
-   */
-  public async firstPage(): Promise<{
-    data: T[];
-    meta: PaginationMeta;
-  }> {
-    const response = await this.fetchFunction({
-      page: 1,
-      pageSize: this.pageSize,
+    const response = await this.request(this.path, {
+      params: { ...this.params, page: this.currentPage, pageSize: this.pageSize },
     });
 
-    const meta = response.meta || {};
-    const total = meta.total || 0;
-    
-    return {
-      data: response.data,
-      meta: {
-        total,
-        page: 1,
-        pageSize: this.pageSize,
-        hasMore: this.pageSize < total,
-      },
-    };
+    this.hasMore = response.meta?.hasMore ?? false;
+    return { value: response.data, done: false };
+  }
+
+  async all(): Promise<T[]> {
+    const items: T[] = [];
+    const firstPage = await this.firstPage();
+    items.push(...firstPage.data);
+
+    let result = await this.next();
+    while (!result.done) {
+      items.push(...result.value);
+      result = await this.next();
+    }
+
+    return items;
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<T[]> {
+    return this;
   }
 }
 
-/**
- * Create a paginated response that can be used to iterate over all pages
- */
-export function createPaginatedResponse<T>(
+export async function createPaginatedResponse<T>(
   fetchFunction: (params: PaginationParams) => Promise<APIResponse<T[]>>,
-  pageSize?: number
-): PaginatedResponse<T> {
-  return new PaginatedResponse(fetchFunction, pageSize);
-} 
+  pageSize = 20
+): Promise<PaginatedResponse<T>> {
+  const response = await fetchFunction({ page: 1, pageSize });
+  return new PaginatedResponse(response, fetchFunction);
+}
+
+export type { PaginatedResponse as PaginatedResponseType }; 

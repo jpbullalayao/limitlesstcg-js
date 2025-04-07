@@ -1,72 +1,47 @@
-import type { AxiosInstance } from 'axios';
-import type { Decklist, APIResponse } from '../types';
+import type { APIResponse, Decklist, DecklistListParams, CreateDecklistParams, UpdateDecklistParams } from '../types';
+import { PaginatedResponse } from '../utils/pagination';
 
-export interface DecklistListParams {
-  page?: number;
-  pageSize?: number;
-  format?: string;
-  playerId?: string;
-  tournamentId?: string;
-  search?: string;
-}
-
-export interface DecklistCreateParams {
-  name: string;
-  format: string;
-  cards: Array<{
-    id: string;
-    quantity: number;
-  }>;
-  isPublic?: boolean;
-  tournamentId?: string;
-  description?: string;
-}
+type DecklistResponse<T> = APIResponse<T>;
 
 export class Decklists {
-  private readonly axios: AxiosInstance;
-  private readonly basePath = '/decklists';
+  constructor(private request: (path: string, options?: Record<string, unknown>) => Promise<DecklistResponse<Decklist | Decklist[]>>) {}
 
-  constructor(axios: AxiosInstance) {
-    this.axios = axios;
+  list(params: DecklistListParams = {}): PaginatedResponse<Decklist> {
+    const wrappedRequest = async (path: string, options?: Record<string, unknown>): Promise<APIResponse<Decklist[]>> => {
+      const response = await this.request(path, options);
+      return response as APIResponse<Decklist[]>;
+    };
+
+    const paginator = new PaginatedResponse<Decklist>(wrappedRequest, 20, '/decklists');
+    paginator.setParams(params);
+    return paginator;
   }
 
-  /**
-   * List decklists with optional filtering
-   */
-  async list(params: DecklistListParams = {}): Promise<APIResponse<Decklist[]>> {
-    const response = await this.axios.get(this.basePath, { params });
-    return response.data;
-  }
-
-  /**
-   * Retrieve a single decklist by ID
-   */
   async retrieve(id: string): Promise<Decklist> {
-    const response = await this.axios.get(`${this.basePath}/${id}`);
-    return response.data;
+    const response = await this.request(`/decklists/${id}`);
+    return response.data as Decklist;
   }
 
-  /**
-   * Create a new decklist (requires authentication)
-   */
-  async create(params: DecklistCreateParams): Promise<Decklist> {
-    const response = await this.axios.post(this.basePath, params);
-    return response.data;
+  async create(params: CreateDecklistParams): Promise<Decklist> {
+    const response = await this.request('/decklists', {
+      method: 'POST',
+      body: params,
+    });
+    return response.data as Decklist;
   }
 
-  /**
-   * Update an existing decklist (requires authentication)
-   */
-  async update(id: string, params: Partial<DecklistCreateParams>): Promise<Decklist> {
-    const response = await this.axios.patch(`${this.basePath}/${id}`, params);
-    return response.data;
+  async update(id: string, params: UpdateDecklistParams): Promise<Decklist> {
+    const response = await this.request(`/decklists/${id}`, {
+      method: 'PATCH',
+      body: params,
+    });
+    return response.data as Decklist;
   }
 
-  /**
-   * Delete a decklist (requires authentication)
-   */
   async delete(id: string): Promise<void> {
-    await this.axios.delete(`${this.basePath}/${id}`);
+    await this.request(`/decklists/${id}`, {
+      method: 'DELETE',
+    });
   }
 
   /**
@@ -83,7 +58,7 @@ export class Decklists {
       quantityDiff: number;
     }>;
   }>>> {
-    const response = await this.axios.get(`${this.basePath}/${id}/similar`, { params });
+    const response = await this.request(`${this.basePath}/${id}/similar`, { params });
     return response.data;
   }
 
@@ -100,7 +75,7 @@ export class Decklists {
       frequency: number;
     }>;
   }> {
-    const response = await this.axios.get(`${this.basePath}/${id}/archetype-stats`);
+    const response = await this.request(`${this.basePath}/${id}/archetype-stats`);
     return response.data;
   }
 } 
