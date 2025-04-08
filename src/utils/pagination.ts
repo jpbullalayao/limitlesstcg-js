@@ -1,9 +1,14 @@
 import type { APIResponse } from '../types';
 
+interface PaginationParams {
+  page?: number;
+  pageSize?: number;
+  [key: string]: string | number | undefined;
+}
+
 export class PaginatedResponse<T> implements AsyncIterator<T[]>, AsyncIterable<T[]> {
   private currentPage = 1;
   private hasMore = true;
-  private total = 0;
   private initialResponse: APIResponse<T[]> | null = null;
   private params: Record<string, string | number> = {};
 
@@ -29,7 +34,6 @@ export class PaginatedResponse<T> implements AsyncIterator<T[]>, AsyncIterable<T
 
     this.initialResponse = response;
     this.currentPage = 1;
-    this.total = response.meta?.total ?? 0;
     this.hasMore = response.meta?.hasMore ?? false;
 
     return response;
@@ -77,8 +81,14 @@ export async function createPaginatedResponse<T>(
   fetchFunction: (params: PaginationParams) => Promise<APIResponse<T[]>>,
   pageSize = 20
 ): Promise<PaginatedResponse<T>> {
-  const response = await fetchFunction({ page: 1, pageSize });
-  return new PaginatedResponse(response, fetchFunction);
+  const wrappedRequest = async (_: string, options?: Record<string, unknown>): Promise<APIResponse<T[]>> => {
+    return fetchFunction(options?.['params'] as PaginationParams || {});
+  };
+  
+  const paginator = new PaginatedResponse<T>(wrappedRequest, pageSize);
+  await fetchFunction({ page: 1, pageSize });
+  paginator.setParams({ page: 1, pageSize });
+  return paginator;
 }
 
 export type { PaginatedResponse as PaginatedResponseType }; 

@@ -7,9 +7,7 @@ import { LimitlessAPIError } from './errors';
 
 export class LimitlessClient {
   private baseURL: string;
-  private timeout: number;
   private apiKey?: string;
-  private version: string;
 
   public readonly tournaments: Tournaments;
   public readonly players: Players;
@@ -18,9 +16,7 @@ export class LimitlessClient {
 
   constructor(config: LimitlessConfig = {}) {
     this.baseURL = config.baseURL || 'https://play.limitlesstcg.com/api';
-    this.timeout = config.timeout || 30000;
     this.apiKey = config.apiKey;
-    this.version = config.version || 'v1';
 
     // Initialize resources with the request method
     this.tournaments = new Tournaments(this.request.bind(this));
@@ -40,7 +36,7 @@ export class LimitlessClient {
     };
 
     if (this.apiKey) {
-      headers.Authorization = `Bearer ${this.apiKey}`;
+      headers['Authorization'] = `Bearer ${this.apiKey}`;
     }
 
     return headers;
@@ -98,12 +94,5 @@ export class LimitlessClient {
    */
   public setApiKey(apiKey: string): void {
     this.apiKey = apiKey;
-  }
-
-  /**
-   * Set a specific API version
-   */
-  public setApiVersion(version: string): void {
-    this.version = version;
   }
 } 
